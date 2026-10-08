@@ -1,0 +1,152 @@
+{
+  "products": {
+    "F175D3AD": {
+      "uid": "F175D3AD",
+      "name": "Organic Whole Milk 1L",
+      "price": 42,
+      "is_cold": true,
+      "category": "Dairy",
+      "image": "🥛",
+      "shelf_stock": 50
+    },
+    "918AB7AD": {
+      "uid": "918AB7AD",
+      "name": "Greek Yoghurt 200g",
+      "price": 35,
+      "is_cold": true,
+      "category": "Dairy",
+      "image": "🥣",
+      "shelf_stock": 40
+    },
+    "1CECRM01": {
+      "uid": "1CECRM01",
+      "name": "Vanilla Bean Ice Cream 500ml",
+      "price": 95,
+      "is_cold": true,
+      "category": "Frozen",
+      "image": "🍨",
+      "shelf_stock": 30
+    },
+    "7297745C": {
+      "uid": "7297745C",
+      "name": "Basmati Rice 1kg",
+      "price": 65,
+      "is_cold": false,
+      "category": "Grains",
+      "image": "🌾",
+      "shelf_stock": 80
+    },
+    "1FCD1AD": {
+      "uid": "1FCD1AD",
+      "name": "Choco Chip Biscuits",
+      "price": 25,
+      "is_cold": false,
+      "category": "Bakery",
+      "image": "🍪",
+      "shelf_stock": 100
+    },
+    "6149AAAD": {
+      "uid": "6149AAAD",
+      "name": "Fresh Alphonso Mangoes",
+      "price": 50,
+      "is_cold": false,
+      "category": "Produce",
+      "image": "🥭",
+      "shelf_stock": 35
+    },
+    "B1A2C4AD": {
+      "uid": "B1A2C4AD",
+      "name": "Whole Wheat Flour 2kg",
+      "price": 85,
+      "is_cold": false,
+      "category": "Grains",
+      "image": "🍞",
+      "shelf_stock": 60
+    },
+    "E3DE4F6": {
+      "uid": "E3DE4F6",
+      "name": "Rolled Breakfast Oats",
+      "price": 40,
+      "is_cold": false,
+      "category": "Breakfast",
+      "image": "🥣",
+      "shelf_stock": 45
+    },
+    "C0FFE01": {
+      "uid": "C0FFE01",
+      "name": "Artisan Coffee Beans 250g",
+      "price": 120,
+      "is_cold": false,
+      "category": "Beverages",
+      "image": "☕",
+      "shelf_stock": 25
+    }
+  },
+  "carts": {
+    "CART_004": {
+      "cart_id": "CART_004",
+      "name": "IoE Smart Cart #004",
+      "status": "available",
+      "paired_user": null,
+      "items": {},
+      "total": 0,
+      "total_items": 0,
+      "removal_mode": false,
+      "removal_target_uid": null,
+      "theft_alarm": false,
+      "telemetry": {
+        "temp_c": 19.2,
+        "humidity": 56.0,
+        "cold_alert": false,
+        "obstacle": false,
+        "dim_lighting": false,
+        "vibration": false,
+        "ultrasonic_cm": 28.5
+      },
+      "lcd_display": {
+        "line1": "Welcome! Cart #004",
+        "line2": "Scan QR to Pair"
+      },
+      "buzzer_trigger": "none",
+      "led_status": {
+        "green": false,
+        "red": false,
+        "light_bar": false
+      },
+      "last_updated": 1726650000000
+    },
+    "CART-101": {
+      "cart_id": "CART-101",
+      "name": "IoE Smart Cart #101",
+      "status": "available",
+      "paired_user": null,
+      "items": {},
+      "total": 0,
+      "total_items": 0,
+      "removal_mode": false,
+      "removal_target_uid": null,
+      "theft_alarm": false,
+      "telemetry": {
+        "temp_c": 20.0,
+        "humidity": 52.0,
+        "cold_alert": false,
+        "obstacle": false,
+        "dim_lighting": false,
+        "vibration": false,
+        "ultrasonic_cm": 30.0
+      },
+      "lcd_display": {
+        "line1": "Welcome! Cart #101",
+        "line2": "Scan QR to Pair"
+      },
+      "buzzer_trigger": "none",
+      "led_status": {
+        "green": false,
+        "red": false,
+        "light_bar": false
+      },
+      "last_updated": 1726650000000
+    }
+  },
+  "bills": {}
+}

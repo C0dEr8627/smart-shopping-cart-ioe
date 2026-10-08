@@ -1,0 +1,11 @@
+{
+  "name": "ioe-smart-shopping-cart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "IoE Smart Shopping Cart System — React + Firebase Realtime Database + Arduino & ESP8266",
+  "scripts": {
+    "dev": "npm --prefix mobile-app run dev",
+    "build": "npm --prefix mobile-app run build",
+    "preview": "npm --prefix mobile-app run preview"
+  }
+}
