@@ -1,11 +1,7 @@
 import React from 'react';
-import { RefreshCw, X, Check, Radio } from 'lucide-react';
+import { RefreshCw, X, Radio } from 'lucide-react';
 
-export default function RemovalModal({ 
-  targetItem, 
-  onConfirmRemoval, 
-  onCancelRemoval 
-}) {
+export default function RemovalModal({ targetItem, onCancelRemoval }) {
   if (!targetItem) return null;
 
   return (
@@ -15,19 +11,19 @@ export default function RemovalModal({
 
         <div className="sheet-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ 
-              width: '32px', 
-              height: '32px', 
-              borderRadius: '50%', 
-              background: 'rgba(239, 68, 68, 0.2)', 
-              color: '#ef4444', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center' 
+            <span style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: 'rgba(239, 68, 68, 0.2)',
+              color: '#ef4444',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
             }}>
               <RefreshCw size={18} className="spin-slow" />
             </span>
-            <h3 className="sheet-title">Stage 4: Removal Mode Active</h3>
+            <h3 className="sheet-title">Remove Item</h3>
           </div>
           <button className="sheet-close-btn" onClick={onCancelRemoval}>
             <X size={16} />
@@ -42,9 +38,9 @@ export default function RemovalModal({
           marginBottom: '16px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '28px' }}>{targetItem.image || "📦"}</span>
+            <span style={{ fontSize: '28px' }}>{targetItem.image || '📦'}</span>
             <div>
-              <h4 style={{ fontSize: '15px', fontWeight: '700', color: 'var(--text-primary)' }}>{targetItem.name}</h4>
+              <h4 style={{ fontSize: '15px', fontWeight: '700' }}>{targetItem.name}</h4>
               <p style={{ fontSize: '12px', color: 'var(--color-red-text)' }}>
                 Unit Price: Rs. {targetItem.price} · Tag: {targetItem.uid}
               </p>
@@ -60,40 +56,35 @@ export default function RemovalModal({
           marginBottom: '18px',
           textAlign: 'center'
         }}>
-          <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px', letterSpacing: '0.5px' }}>CART LCD DISPLAY</div>
-          <div style={{ fontFamily: 'var(--font-lcd)', fontSize: '14px', color: 'var(--lcd-glass)', letterSpacing: '1px' }}>
+          <div style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '4px' }}>
+            CART LCD DISPLAY
+          </div>
+          <div style={{ fontFamily: 'var(--font-lcd)', fontSize: '14px', color: 'var(--lcd-glass)' }}>
             SCAN TO REMOVE
           </div>
-          <div style={{ fontFamily: 'var(--font-lcd)', fontSize: '13px', color: '#a7f3d0', letterSpacing: '1px' }}>
+          <div style={{ fontFamily: 'var(--font-lcd)', fontSize: '13px', color: '#a7f3d0' }}>
             {targetItem.name.substring(0, 16).toUpperCase()}
           </div>
         </div>
 
         <p style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: '20px' }}>
-          The hardware has been flagged into <strong>Removal Mode</strong>. Pass the item tag across the <strong>RC522 RFID reader</strong>. The Arduino will double beep and deduct the price from your bill.
+          Removal mode is active. <strong>Scan the item's RFID tag on the physical RC522 reader.</strong>
+          The Arduino and Firebase will remove the item automatically. No manual removal is performed by the web app.
         </p>
 
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            className="btn-pay" 
-            style={{ 
-              background: 'var(--color-red)', 
-              color: '#ffffff',
-              boxShadow: 'var(--shadow-sm)'
-            }}
-            onClick={() => onConfirmRemoval(targetItem.uid)}
-          >
-            <Radio size={16} />
-            Simulate RFID Tag Removal
-          </button>
-          <button 
-            className="sheet-close-btn" 
-            style={{ width: 'auto', padding: '0 16px', borderRadius: '999px', fontSize: '13px', fontWeight: '600' }}
-            onClick={onCancelRemoval}
-          >
-            Cancel
-          </button>
-        </div>
+        <button
+          className="btn-pay"
+          style={{
+            width: '100%',
+            background: 'var(--color-red)',
+            color: '#ffffff',
+            boxShadow: 'var(--shadow-sm)'
+          }}
+          disabled
+        >
+          <Radio size={16} />
+          Waiting for RFID scan…
+        </button>
       </div>
     </div>
   );
