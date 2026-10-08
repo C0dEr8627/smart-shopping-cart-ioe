@@ -1,33 +1,20 @@
 /*
- * ==============================================================================
- * IoE Smart Shopping Cart — ESP8266 Wi-Fi Firebase Gateway (FINAL VERSION)
- * ==============================================================================
+ * IoE Smart Shopping Cart — ESP8266 Firebase Gateway
+ * Step 2: Arduino <-> Firebase bridge
  *
- * HARDWARE: ESP8266 ESP-01 (or NodeMCU)
- * ROLE: Bridges Arduino Uno ↔ Firebase Realtime Database via Wi-Fi
+ * Arduino serial:
+ *   SCAN:CART_ID:UID:ADD
+ *   SCAN:CART_ID:UID:REM
+ *   TELEM:CART_ID:TEMP:HUM:OBSTACLE:0:0
  *
- * ── WIRING: ESP8266 ↔ Arduino Uno ────────────────────────────────────────────
- *  ESP8266 TX  → Arduino D8  (direct wire, 3.3V logic is safe for Uno input)
- *  ESP8266 RX  → Arduino A0  (via 1kΩ+2kΩ voltage divider to drop 5V→3.3V)
- *  ESP8266 VCC → 3.3V (use dedicated 3.3V 500mA regulator — Uno's onboard
- *                       3.3V pin is limited; use AMS1117-3.3 if possible)
- *  ESP8266 CH_PD (EN) → 3.3V  (must be HIGH to enable module)
- *  ESP8266 GND → Arduino GND  (shared common ground — ESSENTIAL)
+ * ESP -> Arduino:
+ *   LCD:<line1>|<line2>
+ *   LINKED:<user>
+ *   TOTAL:<count>:<total>
+ *   MODE:REMOVAL
+ *   MODE:NORMAL
  *
- * ── VOLTAGE DIVIDER for Arduino A0 → ESP8266 RX ─────────────────────────────
- *  Arduino A0 → 1kΩ → [node] → 2kΩ → GND
- *                         └──→ ESP8266 RX
- *
- * ── UPLOAD PROCEDURE ─────────────────────────────────────────────────────────
- *  Flash this sketch to ESP8266 SEPARATELY (e.g., using a USB-to-Serial adapter
- *  or NodeMCU board). Then plug ESP-01 into the circuit.
- *
- * ── Required Arduino IDE Board & Libraries ───────────────────────────────────
- *  Board:   "Generic ESP8266 Module" (install via Boards Manager)
- *  Library: ArduinoJson by Benoît Blanchon (v6.x)
- *
- * ── FILL IN YOUR CREDENTIALS BELOW ──────────────────────────────────────────
- * ==============================================================================
+ * LDR, SW-420, theft alarm and payment gateway are intentionally not used.
  */
 
 #include <ESP8266WiFi.h>
@@ -35,44 +22,47 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 
-// ─── ⚙️  USER CONFIGURATION — FILL THESE IN ──────────────────────────────────
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";       // ← Your Wi-Fi network name
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";   // ← Your Wi-Fi password
+// ---------------- Configuration ----------------
 
-// Firebase Realtime Database host (no https://, no trailing slash)
-const char* FIREBASE_HOST = "smart-attendance-336ca-default-rtdb.firebaseio.com";
+const char* WIFI_SSID = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// Cart ID — must match the cart node in your Firebase seed data
+const char* FIREBASE_HOST =
+  "smart-attendance-336ca-default-rtdb.firebaseio.com";
+
 const String CART_ID = "CART_004";
-// ─────────────────────────────────────────────────────────────────────────────
+
+const unsigned long FIREBASE_POLL_MS = 1500;
+
+// Cold-section temperature threshold.
+// This is only a display/data warning; it does not control cooling hardware.
+const float COLD_ALERT_TEMP_C = 8.0;
+
+// ---------------- Runtime ----------------
 
 WiFiClientSecure wifiClient;
-HTTPClient http;
 
-unsigned long lastPollTime     = 0;
-bool          lastRemovalMode  = false;   // Track state to send MODE:NORMAL
-bool          lastTheftAlarm   = false;   // Track to send ALARM:RESET
-String        lastStatus       = "";      // Track payment completion
+unsigned long lastPollTime = 0;
+bool lastRemovalMode = false;
+String lastPairedUser = "";
 
-// ─────────────────────────────────────────────────────────────────────────────
 void setup() {
-  Serial.begin(9600);   // UART to Arduino Uno (D8/A0 via SoftwareSerial on Uno)
+  Serial.begin(9600);
   delay(500);
 
-  wifiClient.setInsecure(); // Skip SSL cert check (acceptable for IoT prototype)
+  wifiClient.setInsecure();
 
-  // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   int attempts = 0;
+
   while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(500);
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    // Notify Arduino that we're online
     Serial.println("LCD:Wi-Fi Connected|Cart #004 Online");
     initCartInFirebase();
   } else {
@@ -80,226 +70,307 @@ void setup() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 void loop() {
-  // Handle incoming messages from Arduino (scans, telemetry, alarms)
   if (Serial.available()) {
     String line = Serial.readStringUntil('\n');
     line.trim();
+
     if (line.length() > 0) {
       handleArduinoMessage(line);
     }
   }
 
-  // Poll Firebase every 1.5s for cloud-driven state changes
-  if (millis() - lastPollTime > 1500) {
+  if (millis() - lastPollTime >= FIREBASE_POLL_MS) {
     lastPollTime = millis();
     pollFirebaseStatus();
   }
 }
 
-// ─── Handle Serial Messages from Arduino ──────────────────────────────────────
+// ---------------- Arduino -> Firebase ----------------
+
 void handleArduinoMessage(String msg) {
-
-  // SCAN:<CART_ID>:<UID>:ADD — RFID scan add item
   if (msg.startsWith("SCAN:") && msg.endsWith(":ADD")) {
-    String uid = extractField(msg, 2);
-    addItemToCloud(uid);
+    String uid = extractScanUid(msg);
+    if (uid.length() > 0) {
+      addItemToCloud(uid);
+    }
+    return;
   }
 
-  // SCAN:<CART_ID>:<UID>:REM — RFID scan remove item
-  else if (msg.startsWith("SCAN:") && msg.endsWith(":REM")) {
-    String uid = extractField(msg, 2);
-    removeItemFromCloud(uid);
+  if (msg.startsWith("SCAN:") && msg.endsWith(":REM")) {
+    String uid = extractScanUid(msg);
+    if (uid.length() > 0) {
+      removeItemFromCloud(uid);
+    }
+    return;
   }
 
-  // TELEM:<CART_ID>:<TEMP>:<HUM>:<OBS>:<DIM>:<VIB>
-  else if (msg.startsWith("TELEM:")) {
+  if (msg.startsWith("TELEM:")) {
     pushTelemetry(msg);
-  }
-
-  // ALARM:<CART_ID>:THEFT
-  else if (msg.startsWith("ALARM:") && msg.endsWith(":THEFT")) {
-    triggerTheftAlarmCloud();
+    return;
   }
 }
 
-// ─── Firebase: Initialise Cart Node ───────────────────────────────────────────
+String extractScanUid(String msg) {
+  // SCAN:<cart>:<uid>:ADD/REM
+  int first = msg.indexOf(':');
+  int second = msg.indexOf(':', first + 1);
+  int third = msg.indexOf(':', second + 1);
+
+  if (first < 0 || second < 0 || third < 0) return "";
+
+  return msg.substring(second + 1, third);
+}
+
+// ---------------- Cart initialisation ----------------
+
 void initCartInFirebase() {
   String url = buildUrl("/carts/" + CART_ID + ".json");
+
+  HTTPClient http;
   http.begin(wifiClient, url);
+
   int code = http.GET();
-  // If cart doesn't exist (null response), create minimal node
+
   if (code == 200) {
     String body = http.getString();
+    http.end();
+
     if (body == "null" || body.length() < 5) {
-      http.end();
-      // Create default cart node
-      String initJson = "{\"cart_id\":\"" + CART_ID + "\","
-                        "\"status\":\"available\","
-                        "\"paired_user\":\"\","
-                        "\"total\":0,"
-                        "\"total_items\":0,"
-                        "\"removal_mode\":false,"
-                        "\"theft_alarm\":false}";
+      String initJson =
+        "{"
+        "\"cart_id\":\"" + CART_ID + "\","
+        "\"status\":\"available\","
+        "\"paired_user\":null,"
+        "\"items\":{},"
+        "\"total\":0,"
+        "\"total_items\":0,"
+        "\"removal_mode\":false,"
+        "\"removal_target_uid\":null,"
+        "\"theft_alarm\":false"
+        "}";
+
       http.begin(wifiClient, url);
       http.addHeader("Content-Type", "application/json");
       http.PUT(initJson);
-    }
-  }
-  http.end();
-}
-
-// ─── Firebase: Add Scanned Item ────────────────────────────────────────────────
-void addItemToCloud(String uid) {
-  // 1. Fetch product info from /products/<uid>
-  String prodUrl = buildUrl("/products/" + uid + ".json");
-  http.begin(wifiClient, prodUrl);
-  int code = http.GET();
-
-  if (code == 200) {
-    String body = http.getString();
-    http.end();
-
-    DynamicJsonDocument doc(512);
-    deserializeJson(doc, body);
-
-    if (!doc.isNull()) {
-      String name  = doc["name"]  | doc["item"] | "Unknown Item";
-      float  price = doc["price"] | 0.0;
-      bool   cold  = doc["is_cold"] | false;
-
-      // 2. Write item to /carts/<CART_ID>/items/<uid>
-      String itemUrl = buildUrl("/carts/" + CART_ID + "/items/" + uid + ".json");
-      http.begin(wifiClient, itemUrl);
-      http.addHeader("Content-Type", "application/json");
-
-      String itemJson = "{\"uid\":\"" + uid + "\","
-                        "\"name\":\"" + name + "\","
-                        "\"price\":" + String(price, 2) + ","
-                        "\"is_cold\":" + (cold ? "true" : "false") + ","
-                        "\"quantity\":1}";
-      http.PUT(itemJson);
       http.end();
-
-      // 3. Recalculate and update cart totals
-      recalculateTotals();
-
-      // 4. Tell Arduino LCD what was added
-      String shortName = name.length() > 10 ? name.substring(0, 10) : name;
-      Serial.println("LCD:" + shortName + " Added|Rs." + String(price, 0));
-    } else {
-      http.end();
-      Serial.println("LCD:Unknown Tag!|Not in Catalog");
     }
   } else {
     http.end();
-    Serial.println("LCD:DB Error " + String(code) + "|Check Firebase");
   }
 }
 
-// ─── Firebase: Remove Scanned Item ────────────────────────────────────────────
-void removeItemFromCloud(String uid) {
-  // Delete item from cart
-  String itemUrl = buildUrl("/carts/" + CART_ID + "/items/" + uid + ".json");
+// ---------------- Add item ----------------
+
+void addItemToCloud(String uid) {
+  String prodUrl = buildUrl("/products/" + uid + ".json");
+
+  HTTPClient http;
+  http.begin(wifiClient, prodUrl);
+
+  int code = http.GET();
+
+  if (code != 200) {
+    http.end();
+    Serial.println("LCD:DB Error|Product lookup failed");
+    return;
+  }
+
+  String body = http.getString();
+  http.end();
+
+  DynamicJsonDocument doc(768);
+  DeserializationError error = deserializeJson(doc, body);
+
+  if (error || doc.isNull()) {
+    Serial.println("LCD:Unknown Tag|Not in Catalog");
+    return;
+  }
+
+  String name = doc["name"] | doc["item"] | "Unknown Item";
+  float price = doc["price"] | 0.0;
+  bool cold = doc["is_cold"] | false;
+
+  String itemUrl =
+    buildUrl("/carts/" + CART_ID + "/items/" + uid + ".json");
+
+  String itemJson =
+    "{\"uid\":\"" + uid +
+    "\",\"name\":\"" + name +
+    "\",\"price\":" + String(price, 2) +
+    ",\"is_cold\":" + String(cold ? "true" : "false") +
+    ",\"quantity\":1}";
+
   http.begin(wifiClient, itemUrl);
-  http.sendRequest("DELETE");
-  http.end();
-
-  // Clear removal mode flags on Firebase
-  String patchUrl = buildUrl("/carts/" + CART_ID + ".json");
-  http.begin(wifiClient, patchUrl);
   http.addHeader("Content-Type", "application/json");
-  http.sendRequest("PATCH", "{\"removal_mode\":false,\"removal_target_uid\":null}");
+  int putCode = http.PUT(itemJson);
   http.end();
 
-  // Recalculate totals
+  if (putCode < 200 || putCode >= 300) {
+    Serial.println("LCD:Cart Update Error|Try Again");
+    return;
+  }
+
+  recalculateTotals();
+
+  String shortName = name;
+  if (shortName.length() > 10) shortName = shortName.substring(0, 10);
+
+  Serial.println(
+    "LCD:" + shortName + " Added|Rs." + String(price, 0)
+  );
+}
+
+// ---------------- Remove item ----------------
+
+void removeItemFromCloud(String uid) {
+  String itemUrl =
+    buildUrl("/carts/" + CART_ID + "/items/" + uid + ".json");
+
+  HTTPClient http;
+  http.begin(wifiClient, itemUrl);
+
+  int code = http.sendRequest("DELETE");
+  http.end();
+
+  if (code < 200 || code >= 300) {
+    Serial.println("LCD:Remove Failed|Try Again");
+    return;
+  }
+
+  String cartUrl = buildUrl("/carts/" + CART_ID + ".json");
+
+  http.begin(wifiClient, cartUrl);
+  http.addHeader("Content-Type", "application/json");
+  http.sendRequest(
+    "PATCH",
+    "{\"removal_mode\":false,\"removal_target_uid\":null}"
+  );
+  http.end();
+
   recalculateTotals();
 
   Serial.println("LCD:Item Removed|Updated Cart");
   Serial.println("MODE:NORMAL");
 }
 
-// ─── Firebase: Recalculate & Sync Cart Totals ─────────────────────────────────
+// ---------------- Totals ----------------
+
 void recalculateTotals() {
-  String url = buildUrl("/carts/" + CART_ID + "/items.json");
+  String url =
+    buildUrl("/carts/" + CART_ID + "/items.json");
+
+  HTTPClient http;
   http.begin(wifiClient, url);
+
   int code = http.GET();
 
-  float total     = 0.0;
-  int   totalItems = 0;
+  float total = 0.0;
+  int totalItems = 0;
 
   if (code == 200) {
     String body = http.getString();
     http.end();
 
     if (body != "null" && body.length() > 2) {
-      DynamicJsonDocument doc(2048);
-      deserializeJson(doc, body);
-      JsonObject obj = doc.as<JsonObject>();
-      for (JsonPair kv : obj) {
-        total     += kv.value()["price"].as<float>();
-        totalItems++;
+      DynamicJsonDocument doc(4096);
+
+      if (!deserializeJson(doc, body)) {
+        JsonObject items = doc.as<JsonObject>();
+
+        for (JsonPair kv : items) {
+          total += kv.value()["price"].as<float>();
+          totalItems++;
+        }
       }
     }
   } else {
     http.end();
   }
 
-  // Write updated totals back to Firebase
-  String patchUrl = buildUrl("/carts/" + CART_ID + ".json");
-  http.begin(wifiClient, patchUrl);
+  String cartUrl = buildUrl("/carts/" + CART_ID + ".json");
+
+  http.begin(wifiClient, cartUrl);
   http.addHeader("Content-Type", "application/json");
-  String patch = "{\"total\":" + String(total, 2) + ",\"total_items\":" + String(totalItems) + "}";
+
+  String patch =
+    "{\"total\":" + String(total, 2) +
+    ",\"total_items\":" + String(totalItems) +
+    ",\"status\":\"active\"}";
+
   http.sendRequest("PATCH", patch);
   http.end();
 
-  // Tell Arduino LCD the running total
-  Serial.println("TOTAL:" + String(totalItems) + ":" + String(total, 0));
+  Serial.println(
+    "TOTAL:" + String(totalItems) + ":" + String(total, 0)
+  );
 }
 
-// ─── Firebase: Push Telemetry Data ────────────────────────────────────────────
+// ---------------- DHT + IR telemetry ----------------
+
 void pushTelemetry(String msg) {
-  // Format: TELEM:<CART_ID>:<TEMP>:<HUM>:<OBS>:<DIM>:<VIB>
-  int c1 = msg.indexOf(':', 0);
+  // TELEM:<cart>:<temp>:<humidity>:<obstacle>:0:0
+
+  int c1 = msg.indexOf(':');
   int c2 = msg.indexOf(':', c1 + 1);
   int c3 = msg.indexOf(':', c2 + 1);
   int c4 = msg.indexOf(':', c3 + 1);
   int c5 = msg.indexOf(':', c4 + 1);
   int c6 = msg.indexOf(':', c5 + 1);
 
+  if (c1 < 0 || c2 < 0 || c3 < 0 ||
+      c4 < 0 || c5 < 0 || c6 < 0) {
+    return;
+  }
+
   float temp = msg.substring(c2 + 1, c3).toFloat();
-  float hum  = msg.substring(c3 + 1, c4).toFloat();
-  bool obs   = msg.substring(c4 + 1, c5) == "1";
-  bool dim   = msg.substring(c5 + 1, c6) == "1";
-  bool vib   = msg.substring(c6 + 1)     == "1";
+  float humidity = msg.substring(c3 + 1, c4).toFloat();
+  bool obstacle = msg.substring(c4 + 1, c5) == "1";
 
-  String json = "{\"temp_c\":"     + String(temp, 1) +
-                ",\"humidity\":"   + String(hum, 1)  +
-                ",\"obstacle\":"   + (obs ? "true" : "false") +
-                ",\"dim_lighting\":" + (dim ? "true" : "false") +
-                ",\"vibration\":"  + (vib ? "true" : "false") + "}";
+  bool coldAlert = temp > COLD_ALERT_TEMP_C;
 
-  String url = buildUrl("/carts/" + CART_ID + "/telemetry.json");
+  String json =
+    "{"
+    "\"temp_c\":" + String(temp, 1) +
+    ",\"humidity\":" + String(humidity, 1) +
+    ",\"cold_alert\":" + String(coldAlert ? "true" : "false") +
+    ",\"obstacle\":" + String(obstacle ? "true" : "false") +
+    "}";
+
+  String url =
+    buildUrl("/carts/" + CART_ID + "/telemetry.json");
+
+  HTTPClient http;
   http.begin(wifiClient, url);
   http.addHeader("Content-Type", "application/json");
   http.PUT(json);
   http.end();
-}
 
-// ─── Firebase: Trigger Theft Alarm ────────────────────────────────────────────
-void triggerTheftAlarmCloud() {
-  String url = buildUrl("/carts/" + CART_ID + ".json");
-  http.begin(wifiClient, url);
+  // Keep the cart's main telemetry fields in sync for the web apps.
+  String cartUrl = buildUrl("/carts/" + CART_ID + ".json");
+
+  http.begin(wifiClient, cartUrl);
   http.addHeader("Content-Type", "application/json");
-  http.sendRequest("PATCH", "{\"theft_alarm\":true,\"status\":\"alarm\"}");
+
+  String patch =
+    "{"
+    "\"telemetry\":" + json +
+    ",\"last_updated\":" + String(millis()) +
+    "}";
+
+  http.sendRequest("PATCH", patch);
   http.end();
 }
 
-// ─── Firebase: Poll for Cloud State Changes ────────────────────────────────────
+// ---------------- Firebase -> Arduino ----------------
+
 void pollFirebaseStatus() {
-  String url = buildUrl("/carts/" + CART_ID + ".json");
+  String url =
+    buildUrl("/carts/" + CART_ID + ".json");
+
+  HTTPClient http;
   http.begin(wifiClient, url);
+
   int code = http.GET();
 
   if (code != 200) {
@@ -310,68 +381,57 @@ void pollFirebaseStatus() {
   String body = http.getString();
   http.end();
 
-  DynamicJsonDocument doc(2048);
-  deserializeJson(doc, body);
+  DynamicJsonDocument doc(4096);
 
-  String status      = doc["status"]       | "available";
-  bool removalMode   = doc["removal_mode"] | false;
-  bool theftAlarm    = doc["theft_alarm"]  | false;
-  String pairedUser  = doc["paired_user"]  | "";
-
-  // ── Cart linked (mobile app scanned QR) ──
-  if (pairedUser.length() > 0 && !pairedUser.equals("\"\"")) {
-    static String lastUser = "";
-    if (lastUser != pairedUser) {
-      lastUser = pairedUser;
-      Serial.println("LINKED:" + pairedUser);
-    }
+  if (deserializeJson(doc, body)) {
+    return;
   }
 
-  // ── Removal mode toggled ON from mobile app ──
+  bool removalMode = doc["removal_mode"] | false;
+  String pairedUser = doc["paired_user"] | "";
+
+  // QR pairing from the mobile web app.
+  if (pairedUser.length() > 0 &&
+      pairedUser != "null" &&
+      pairedUser != lastPairedUser) {
+
+    lastPairedUser = pairedUser;
+    Serial.println("LINKED:" + pairedUser);
+  }
+
+  // Mobile app requests physical RFID removal.
   if (removalMode && !lastRemovalMode) {
     Serial.println("MODE:REMOVAL");
   }
-  // ── Removal mode cleared ──
+
   if (!removalMode && lastRemovalMode) {
     Serial.println("MODE:NORMAL");
   }
+
   lastRemovalMode = removalMode;
 
-  // ── Payment completed on mobile app ──
-  if (status == "paid" && lastStatus != "paid") {
-    Serial.println("PAID:SUCCESS");
-    lastStatus = "paid";
-  }
-  if (status != "paid" && lastStatus == "paid") {
-    lastStatus = status; // Reset tracking after new session
-  }
+  // Keep the LCD total synchronized with Firebase.
+  int totalItems = doc["total_items"] | 0;
+  float total = doc["total"] | 0.0;
 
-  // ── Theft alarm disarmed from mobile app ──
-  if (!theftAlarm && lastTheftAlarm) {
-    Serial.println("ALARM:RESET");
+  static int lastItems = -1;
+  static float lastTotal = -1.0;
+
+  if (totalItems != lastItems ||
+      abs(total - lastTotal) > 0.01) {
+
+    lastItems = totalItems;
+    lastTotal = total;
+
+    Serial.println(
+      "TOTAL:" + String(totalItems) +
+      ":" + String(total, 0)
+    );
   }
-  lastTheftAlarm = theftAlarm;
 }
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
+// ---------------- Utilities ----------------
+
 String buildUrl(String path) {
   return "https://" + String(FIREBASE_HOST) + path;
-}
-
-// Extract the Nth colon-delimited field (0-indexed) from a string
-String extractField(String str, int fieldIndex) {
-  int start = 0;
-  int count = 0;
-  for (int i = 0; i < str.length(); i++) {
-    if (str[i] == ':') {
-      if (count == fieldIndex) {
-        int end = str.indexOf(':', i + 1);
-        if (end == -1) return str.substring(i + 1);
-        return str.substring(i + 1, end);
-      }
-      count++;
-      start = i + 1;
-    }
-  }
-  return "";
 }
