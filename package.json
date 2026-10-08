@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "npm --prefix mobile-app run dev",
     "build": "npm --prefix mobile-app run build",
-    "preview": "npm --prefix mobile-app run preview"
+    "preview": "npm --prefix mobile-app run preview",
+    "dev:desktop": "npm --prefix desktop-app run dev",
+    "build:desktop": "npm --prefix desktop-app run build",
+    "preview:desktop": "npm --prefix desktop-app run preview"
   }
 }
