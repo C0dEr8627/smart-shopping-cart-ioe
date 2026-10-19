@@ -24,8 +24,8 @@
 
 // ---------------- Configuration ----------------
 
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* WIFI_SSID = "Redmi 12 u";
+const char* WIFI_PASSWORD = "umar1266";
 
 const char* FIREBASE_HOST =
   "smart-attendance-336ca-default-rtdb.firebaseio.com";
